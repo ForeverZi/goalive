@@ -121,6 +121,7 @@ loop:
 				default:
 				}
 				front = checker.list.Front()
+				batchCount++
 			}
 		}
 	}
