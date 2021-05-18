@@ -100,15 +100,19 @@ loop:
 			for front := checker.list.Front(); front != nil && batchCount <= checker.batchSize; {
 				fv := front.Value.(Entry)
 				if now.Sub(fv.T) < checker.timeout {
+					timer := time.NewTimer(now.Sub(fv.T))
 					select {
 					case entry := <-checker.touchChan:
+						if !timer.Stop() {
+							<-timer.C
+						}
 						if elem, ok := checker.m[entry.K]; ok {
 							checker.list.Remove(elem)
 						} else {
 							checker.upLineChan <- entry
 						}
 						checker.m[entry.K] = checker.list.PushBack(entry)
-					case <-time.After(now.Sub(fv.T)):
+					case <-timer.C:
 					}
 					break
 				}
