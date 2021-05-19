@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -76,6 +77,11 @@ func (checker *MonoChecker) Run() (err error) {
 		}
 		atomic.CompareAndSwapInt32(&checker.running, 1, 0)
 	}()
+	var timerPool = sync.Pool{
+		New: func() interface{} {
+			return time.NewTimer(time.Second)
+		},
+	}
 loop:
 	for {
 		select {
@@ -100,11 +106,13 @@ loop:
 			for front := checker.list.Front(); front != nil && batchCount <= checker.batchSize; {
 				fv := front.Value.(Entry)
 				if now.Sub(fv.T) < checker.timeout {
-					timer := time.NewTimer(now.Sub(fv.T))
+					to := timerPool.Get().(*time.Timer)
+					to.Stop()
+					to.Reset(now.Sub(fv.T))
 					select {
 					case entry := <-checker.touchChan:
-						if !timer.Stop() {
-							<-timer.C
+						if !to.Stop() {
+							<-to.C
 						}
 						if elem, ok := checker.m[entry.K]; ok {
 							checker.list.Remove(elem)
@@ -112,8 +120,9 @@ loop:
 							checker.upLineChan <- entry
 						}
 						checker.m[entry.K] = checker.list.PushBack(entry)
-					case <-timer.C:
+					case <-to.C:
 					}
+					timerPool.Put(to)
 					break
 				}
 				// 移除最前面的
